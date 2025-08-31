@@ -39,14 +39,17 @@ def load_universe():
 # ---------- compute signals for one ticker ----------
 def compute_for_ticker(ticker: str) -> dict:
     try:
-        # auto_adjust=False gives raw Open/High/Low/Close (so prev_close & open look proper)
+        # 90d so we can carve out a clean ~30-point sparkline
         hist = yf.download(
-            ticker, period="60d", interval="1d", auto_adjust=False, progress=False
+            ticker, period="90d", interval="1d", auto_adjust=False, progress=False
         )
         if hist.empty or len(hist) < 21:
             return {"ticker": ticker}
 
         hist = hist.dropna()
+
+        # Sparkline series: last 30 closes (fallback to whatever exists)
+        closes = hist["Close"].tail(30).astype(float).round(2).tolist()
 
         # Pre-compute RSI(14)
         hist["RSI14"] = rsi(hist["Close"], 14)
@@ -97,6 +100,7 @@ def compute_for_ticker(ticker: str) -> dict:
             "last_close": round(close_today, 4) if not math.isnan(close_today) else np.nan,
             "prev_close": round(close_prev, 4) if not math.isnan(close_prev) else np.nan,
             "open": round(open_today, 4) if not math.isnan(open_today) else np.nan,
+            "spark": closes,  # <= mini price series for sparkline
         }
     except Exception:
         return {"ticker": ticker}
@@ -113,10 +117,10 @@ def main():
     keep_cols = [c for c in ["ticker","score","news_sentiment"] if c in old.columns]
     merged = new.merge(old[keep_cols].drop_duplicates(), on="ticker", how="left")
 
-    # final column order
+    # final column order (added spark)
     cols = [
         "ticker","vol_spike","breakout20","rsi_cross_50","pct_change","gap_up_5",
-        "last_close","prev_close","open","score","news_sentiment"
+        "last_close","prev_close","open","spark","score","news_sentiment"
     ]
     for c in cols:
         if c not in merged.columns:
