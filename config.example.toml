@@ -1,0 +1,30 @@
+
+# Rename to config.toml and fill in values
+
+tickers = ["OPEN", "AAPL"]
+
+# Required by SEC for polite access - identify your app/email (see README)
+[sec]
+user_agent = "YourName your.email@example.com"
+# Optional: set a CIK cache path
+cache_dir = "data/sec"
+
+[news]
+per_ticker = 20  # headlines to fetch via RSS
+
+[x_api]
+# Optional: put X keys if you have them (or leave blank and the code will skip X)
+bearer_token = ""
+
+[llm]
+# Optional: set provider and keys if you want LLM summaries
+provider = ""         # "openai" or "anthropic"
+api_key = ""
+model = ""           # e.g., "gpt-4o-mini" or "claude-3-haiku-20240307"
+max_tokens = 600
+temperature = 0.2
+
+
+# Discovery / Universe
+[universe]
+size = 50  # how many tickers to keep each day after seeding/screening

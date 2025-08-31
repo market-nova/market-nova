@@ -1,0 +1,7 @@
+streamlit>=1.36
+pandas>=2.0
+numpy>=1.23
+requests>=2.31
+lxml>=4.9
+feedparser>=6.0
+streamlit-autorefresh>=1.0

@@ -1,0 +1,22 @@
+tickers = []  # leave empty so the app uses the daily 50-ticker universe
+
+[sec]
+user_agent = "MarketPulseBot/1.0 contact@example.org"
+cache_dir = "data/sec"
+enabled = true   # turn SEC pulls ON
+
+[news]
+per_ticker = 20
+
+[x_api]
+bearer_token = ""  # optional: add your X API token if you ever get one
+
+[llm]
+provider = ""       # optional: "openai" or "anthropic"
+api_key = ""        # optional: paste your API key here
+model = ""          # optional: e.g. "gpt-4o-mini"
+max_tokens = 600
+temperature = 0.2
+
+[universe]
+size = 50
