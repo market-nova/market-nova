@@ -5,3 +5,4 @@ requests>=2.31
 lxml>=4.9
 feedparser>=6.0
 streamlit-autorefresh>=1.0
+yfinance>=0.2.40
