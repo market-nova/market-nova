@@ -223,8 +223,24 @@ def discovery_tab():
 
     # -------- Render editor with sizing --------
     st.data_editor(
+            # -------- Render editor with sizing and explicit order --------
+    col_order = [
+        "Ticker",
+        "Volume Spike (x)",
+        "20-Day Breakout",
+        "RSI Crossed 50",
+        "Daily Change %",
+        "Gap Up 5%+",
+        "News Sentiment (-1..+1)",
+        "Discovery Score",
+        "Last Close",
+    ]
+
+    st.data_editor(
         display,
         hide_index=True,
+        use_container_width=True,
+        column_order=col_order,
         column_config={
             "Ticker": st.column_config.TextColumn("Ticker", width="small"),
             "Volume Spike (x)": st.column_config.NumberColumn("Volume Spike (x)", help="Today’s volume ÷ 20-day average", width="small", step=0.1, format="%.2f"),
