@@ -1,9 +1,11 @@
 # app.py
+
 import os
 import re
 import base64
 from pathlib import Path
 from datetime import datetime
+from ast import literal_eval
 
 import pandas as pd
 import streamlit as st
@@ -28,7 +30,7 @@ def load_csv(path: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 def legend(title: str, lines: list[str]):
-    with st.expander(f"Legend — {title}", expanded=False):
+    with st.expander(f"Legend - {title}", expanded=False):
         st.markdown("\n".join([f"- {ln}" for ln in lines]))
 
 def kpi_row(items):
@@ -136,6 +138,19 @@ def discovery_tab():
         return
 
     df = pd.read_csv(path)
+
+    # Parse spark from CSV text -> Python list (needed for LineChartColumn)
+    if "spark" in df.columns:
+        def _parse_spark(v):
+            if isinstance(v, list):
+                return v
+            if isinstance(v, str) and v.strip().startswith("["):
+                try:
+                    return literal_eval(v)
+                except Exception:
+                    return []
+            return []
+        df["spark"] = df["spark"].apply(_parse_spark)
 
     # Beginner-friendly headers
     rename_map = {
@@ -332,7 +347,7 @@ def sec_tab():
         df["filed_et"] = df["filed"].dt.tz_convert("America/New_York").dt.strftime("%Y-%m-%d %H:%M")
 
     last_time = df["filed"].max() if "filed" in df.columns else pd.NaT
-    last_time_txt = "—" if pd.isna(last_time) else last_time.tz_convert("America/New_York").strftime("%Y-%m-%d %H:%M ET")
+    last_time_txt = "-" if pd.isna(last_time) else last_time.tz_convert("America/New_York").strftime("%Y-%m-%d %H:%M ET")
     total_rows = len(df)
 
     st.info(f"Latest filing time: **{last_time_txt}** • Total rows: **{total_rows}**")
