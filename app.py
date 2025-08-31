@@ -122,38 +122,121 @@ def dashboard_tab():
 def discovery_tab():
     st.header("Discovery – Find Up-and-Coming Setups")
 
-    legend("Discovery",
+    # -------- Legend with beginner explanations --------
+    legend("Discovery (Beginner Explanations)",
     [
-        "**ticker** – stock symbol",
-        "**vol_spike** – today’s volume ÷ 20-day avg",
-        "**breakout20** – 1 if price > 20-day high today",
-        "**rsi_cross_50** – 1 if RSI crossed 50",
-        "**pct_change** – today’s % return",
-        "**gap_up_5** – 1 if opened >5% above close",
-        "**news_sentiment** – avg headline sentiment",
-        "**score** – discovery score",
-        "**last_close** – last close price",
+        "**Ticker** – the stock symbol (e.g., OPEN).",
+        "**Volume Spike (x)** – today’s trading volume divided by the stock’s 20-day average volume. "
+        "Values above 1.0 mean more activity than usual (e.g., 2.0 = double normal).",
+        "**20-Day Breakout** – 'Yes' if today’s price pushed above the highest price of the last 20 trading days. "
+        "Breakouts can indicate strong buying interest.",
+        "**RSI Crossed 50** – RSI (Relative Strength Index) moving above 50 can signal momentum shifting bullish. "
+        "Below 50 often means momentum is weak; above 50 means improving.",
+        "**Daily Change %** – percentage move from yesterday’s close to today’s last price.",
+        "**Gap Up 5%+** – 'Yes' if today’s opening price was at least 5% above the prior close (a bullish sign of demand).",
+        "**News Sentiment** – average headline sentiment scored from −1 (bearish) to +1 (bullish) for the day.",
+        "**Discovery Score** – combined score that surfaces interesting setups using multiple signals.",
+        "**Last Close** – last official closing price.",
     ])
 
+    # -------- Load core universe --------
     path = "data/universe_today.csv"
-    if os.path.exists(path):
-        df = pd.read_csv(path)
-        sort_col = "score" if "score" in df.columns else ("discovery_score" if "discovery_score" in df.columns else None)
-        if sort_col:
-            df = df.sort_values(sort_col, ascending=False)
-
-        st.data_editor(
-            df,
-            hide_index=True,
-            column_config={
-                "ticker": st.column_config.TextColumn("Ticker", width="small"),
-                "score": st.column_config.NumberColumn("Score", width="small"),
-                "discovery_score": st.column_config.NumberColumn("Score", width="small"),
-                "last_close": st.column_config.NumberColumn("Last Close", width="small"),
-            }
-        )
-    else:
+    if not os.path.exists(path):
         st.error("Universe file not found. Run `python seed_universe.py`.")
+        st.caption(f"Last refresh: {now_text()}")
+        return
+
+    df = pd.read_csv(path)
+
+    # -------- Try to enrich with News Sentiment if missing --------
+    if "news_sentiment" not in df.columns:
+        ns_path = "data/news_scored.csv"
+        if os.path.exists(ns_path):
+            ns = pd.read_csv(ns_path)
+            if {"ticker","sentiment"} <= set(ns.columns):
+                ns_agg = ns.groupby("ticker", as_index=False)["sentiment"].mean().rename(columns={"sentiment":"news_sentiment"})
+                df = df.merge(ns_agg, on="ticker", how="left")
+
+    # -------- Create friendly display columns (compute where possible or leave blank) --------
+    # Try to compute Daily Change % if not present
+    if "pct_change" not in df.columns:
+        # Try common column names to estimate percentage change
+        if {"last_close","prev_close"} <= set(df.columns):
+            with pd.option_context('mode.chained_assignment', None):
+                df["pct_change"] = (df["last_close"] - df["prev_close"]) / df["prev_close"] * 100.0
+        elif {"close","prev_close"} <= set(df.columns):
+            df["pct_change"] = (df["close"] - df["prev_close"]) / df["prev_close"] * 100.0
+        elif {"price","prev_close"} <= set(df.columns):
+            df["pct_change"] = (df["price"] - df["prev_close"]) / df["prev_close"] * 100.0
+        else:
+            df["pct_change"] = pd.NA  # leave blank if we can't compute
+
+    # Try to compute Gap Up 5%+ if not present
+    if "gap_up_5" not in df.columns:
+        if {"open","prev_close"} <= set(df.columns):
+            df["gap_up_5"] = ((df["open"] - df["prev_close"]) / df["prev_close"] >= 0.05).astype(int)
+        else:
+            df["gap_up_5"] = pd.NA
+
+    # Normalize binary indicators to Yes/No for display later
+    def yes_no(col):
+        if col not in df.columns: 
+            return pd.Series([pd.NA]*len(df))
+        series = df[col]
+        if series.dtype.kind in "biufc":
+            return series.fillna(0).astype(int).map({1:"Yes", 0:"No"})
+        return series
+
+    # -------- Decide sort column --------
+    sort_col = "score" if "score" in df.columns else ("discovery_score" if "discovery_score" in df.columns else None)
+    if sort_col:
+        df = df.sort_values(sort_col, ascending=False)
+
+    # -------- Build a display frame with beginner titles --------
+    display = pd.DataFrame()
+    display["Ticker"] = df.get("ticker")
+
+    # Volume spike (x vs 20-day avg)
+    display["Volume Spike (x)"] = df.get("vol_spike")
+
+    # 20-day breakout and RSI cross (Yes/No)
+    display["20-Day Breakout"] = yes_no("breakout20")
+    display["RSI Crossed 50"] = yes_no("rsi_cross_50")
+
+    # Daily change and gap up
+    display["Daily Change %"] = df.get("pct_change")
+    display["Gap Up 5%+"] = yes_no("gap_up_5")
+
+    # News sentiment
+    display["News Sentiment (-1..+1)"] = df.get("news_sentiment")
+
+    # Discovery score
+    if "score" in df.columns:
+        display["Discovery Score"] = df["score"]
+    elif "discovery_score" in df.columns:
+        display["Discovery Score"] = df["discovery_score"]
+    else:
+        display["Discovery Score"] = pd.NA
+
+    # Last close
+    display["Last Close"] = df.get("last_close", df.get("close"))
+
+    # -------- Render editor with sizing --------
+    st.data_editor(
+        display,
+        hide_index=True,
+        column_config={
+            "Ticker": st.column_config.TextColumn("Ticker", width="small"),
+            "Volume Spike (x)": st.column_config.NumberColumn("Volume Spike (x)", help="Today’s volume ÷ 20-day average", width="small", step=0.1, format="%.2f"),
+            "20-Day Breakout": st.column_config.TextColumn("20-Day Breakout", width="small"),
+            "RSI Crossed 50": st.column_config.TextColumn("RSI Crossed 50", width="small"),
+            "Daily Change %": st.column_config.NumberColumn("Daily Change %", help="Percent move from yesterday’s close", width="small", step=0.1, format="%.2f"),
+            "Gap Up 5%+": st.column_config.TextColumn("Gap Up 5%+", width="small"),
+            "News Sentiment (-1..+1)": st.column_config.NumberColumn("News Sentiment (-1..+1)", width="small", step=0.01, format="%.2f"),
+            "Discovery Score": st.column_config.NumberColumn("Discovery Score", width="small", step=0.001, format="%.4f"),
+            "Last Close": st.column_config.NumberColumn("Last Close", width="small", step=0.01, format="%.2f"),
+        }
+    )
 
     st.caption(f"Last refresh: {now_text()}")
 
