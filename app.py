@@ -7,9 +7,13 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 # ================== Page / Theme ==================
 st.set_page_config(page_title="Market Nova", layout="wide")
+
+# Auto-refresh every 5 minutes (300,000 ms)
+st_autorefresh(interval=300_000, key="auto5min")
 
 # ================== Utilities ==================
 def now_text():
@@ -122,69 +126,96 @@ def discovery_tab():
         "**last_close** - last close price",
         "**prev_close** - prior close",
         "**open** - today open",
+        "**spark** - recent price series for the sparkline",
     ])
 
     path = "data/universe_today.csv"
-    if os.path.exists(path):
-        df = pd.read_csv(path)
-
-        # Beginner-friendly headers
-        rename_map = {
-            "ticker": "Ticker",
-            "vol_spike": "Volume Spike (x)",
-            "breakout20": "20-Day Breakout",
-            "rsi_cross_50": "RSI Crossed 50",
-            "pct_change": "Daily Change %",
-            "gap_up_5": "Gap Up 5%+",
-            "news_sentiment": "News Sentiment (-1..+1)",
-            "score": "Discovery Score",
-            "last_close": "Last Close",
-            "prev_close": "Prev Close",
-            "open": "Open",
-        }
-        df_display = df.rename(columns=rename_map).copy()
-
-        # Numeric formatting
-        def _num(df_in, cols, ndigits):
-            for c in cols:
-                if c in df_in.columns:
-                    df_in[c] = pd.to_numeric(df_in[c], errors="coerce").round(ndigits)
-            return df_in
-
-        df_display = _num(
-            df_display,
-            ["Volume Spike (x)", "Daily Change %", "Last Close", "Prev Close", "Open", "Discovery Score"],
-            2
-        )
-
-        # Optional cosmetic - replace NaN with "-"
-        df_display = df_display.fillna("-")
-
-        # Column order
-        ordered = [
-            "Ticker",
-            "Volume Spike (x)",
-            "20-Day Breakout",
-            "RSI Crossed 50",
-            "Daily Change %",
-            "Gap Up 5%+",
-            "News Sentiment (-1..+1)",
-            "Discovery Score",
-            "Last Close",
-            "Prev Close",
-            "Open",
-        ]
-        cols = [c for c in ordered if c in df_display.columns] + \
-               [c for c in df_display.columns if c not in ordered]
-        df_display = df_display[cols]
-
-        # Sort by Discovery Score (highest first)
-        if "Discovery Score" in df_display.columns:
-            df_display = df_display.sort_values("Discovery Score", ascending=False)
-
-        st.dataframe(df_display, hide_index=True)
-    else:
+    if not os.path.exists(path):
         st.error("Universe file not found. Run `python prep_discovery.py` to build it.")
+        st.caption(f"Last refresh: {now_text()}")
+        return
+
+    df = pd.read_csv(path)
+
+    # Beginner-friendly headers
+    rename_map = {
+        "ticker": "Ticker",
+        "vol_spike": "Volume Spike (x)",
+        "breakout20": "20-Day Breakout",
+        "rsi_cross_50": "RSI Crossed 50",
+        "pct_change": "Daily Change %",
+        "gap_up_5": "Gap Up 5%+",
+        "news_sentiment": "News Sentiment (-1..+1)",
+        "score": "Discovery Score",
+        "last_close": "Last Close",
+        "prev_close": "Prev Close",
+        "open": "Open",
+        "spark": "Trend",  # sparkline column
+    }
+    df_display = df.rename(columns=rename_map).copy()
+
+    # Numeric formatting (keep raw lists for Trend)
+    def _num(df_in, cols, ndigits):
+        for c in cols:
+            if c in df_in.columns:
+                df_in[c] = pd.to_numeric(df_in[c], errors="coerce").round(ndigits)
+        return df_in
+
+    df_display = _num(
+        df_display,
+        ["Volume Spike (x)", "Daily Change %", "Last Close", "Prev Close", "Open", "Discovery Score"],
+        2
+    )
+
+    # Column order - put Trend right after Ticker
+    ordered = [
+        "Ticker",
+        "Trend",
+        "Volume Spike (x)",
+        "20-Day Breakout",
+        "RSI Crossed 50",
+        "Daily Change %",
+        "Gap Up 5%+",
+        "News Sentiment (-1..+1)",
+        "Discovery Score",
+        "Last Close",
+        "Prev Close",
+        "Open",
+    ]
+    cols = [c for c in ordered if c in df_display.columns] + \
+           [c for c in df_display.columns if c not in ordered]
+    df_display = df_display[cols]
+
+    # Sort by Discovery Score (highest first)
+    if "Discovery Score" in df_display.columns:
+        df_display = df_display.sort_values("Discovery Score", ascending=False)
+
+    # Render as grid with sparkline
+    st.data_editor(
+        df_display,
+        hide_index=True,
+        disabled=True,
+        use_container_width=True,
+        column_config={
+            "Trend": st.column_config.LineChartColumn(
+                "Trend",
+                width="small",
+                help="Recent closing prices",
+                y_min=None,
+                y_max=None,
+            ),
+            "Volume Spike (x)": st.column_config.NumberColumn(format="%.2f", width="small"),
+            "Daily Change %": st.column_config.NumberColumn(format="%.2f", width="small"),
+            "Last Close": st.column_config.NumberColumn(format="%.2f", width="small"),
+            "Prev Close": st.column_config.NumberColumn(format="%.2f", width="small"),
+            "Open": st.column_config.NumberColumn(format="%.2f", width="small"),
+            "20-Day Breakout": st.column_config.NumberColumn(width="small"),
+            "RSI Crossed 50": st.column_config.NumberColumn(width="small"),
+            "Gap Up 5%+": st.column_config.NumberColumn(width="small"),
+            "News Sentiment (-1..+1)": st.column_config.NumberColumn(format="%.2f", width="small"),
+            "Discovery Score": st.column_config.NumberColumn(format="%.2f", width="small"),
+        },
+    )
 
     st.caption(f"Last refresh: {now_text()}")
 
@@ -326,8 +357,13 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
     ["📊 Dashboard", "🔍 Discovery", "📰 News Sentiment", "📈 Chatter", "📄 SEC Filings"]
 )
 
-with tab1: dashboard_tab()
-with tab2: discovery_tab()
-with tab3: news_tab()
-with tab4: chatter_tab()
-with tab5: sec_tab()
+with tab1:
+    dashboard_tab()
+with tab2:
+    discovery_tab()
+with tab3:
+    news_tab()
+with tab4:
+    chatter_tab()
+with tab5:
+    sec_tab()
