@@ -1,44 +1,15 @@
+# app.py
 import os
 import re
-from datetime import datetime
-from pathlib import Path
 import base64
+from pathlib import Path
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 
-# ================== Page Settings ==================
+# ================== Page / Theme ==================
 st.set_page_config(page_title="Market Nova", layout="wide")
-
-# ================== Banner ==================
-def _img_b64(p: Path) -> str:
-    return base64.b64encode(p.read_bytes()).decode("utf-8")
-
-def show_market_nova_banner():
-    img_path = Path("market_nova_brand.png")
-    if not img_path.exists():
-        st.warning("Banner not found: market_nova_brand.png")
-        return
-    b64 = _img_b64(img_path)
-    st.markdown(
-        f"""
-        <style>
-        .nova-hero {{
-          --h: min(20vh, 160px);
-          width: 100%;
-          height: var(--h);
-          border-radius: 14px;
-          background-image: url("data:image/png;base64,{b64}");
-          background-size: cover;
-          background-position: center;
-          background-repeat: no-repeat;
-          margin: 8px 0 6px 0;
-        }}
-        </style>
-        <div class="nova-hero"></div>
-        """,
-        unsafe_allow_html=True,
-    )
 
 # ================== Utilities ==================
 def now_text():
@@ -61,6 +32,35 @@ def kpi_row(items):
     for col, (lbl, val) in zip(cols, items):
         col.metric(lbl, val)
 
+# ================== Banner ==================
+def _img_b64(p: Path) -> str:
+    return base64.b64encode(p.read_bytes()).decode("utf-8")
+
+def show_market_nova_banner():
+    img_path = Path("market_nova_brand.png")
+    if not img_path.exists():
+        return
+    b64 = _img_b64(img_path)
+    st.markdown(
+        f"""
+        <style>
+        .nova-hero {{
+          --h: min(20vh, 160px);
+          width: 100%;
+          height: var(--h);
+          border-radius: 14px;
+          background-image: url("data:image/png;base64,{b64}");
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          margin: 8px 0 6px 0;
+        }}
+        </style>
+        <div class="nova-hero"></div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 # ================== Dashboard ==================
 def dashboard_tab():
     st.header("Dashboard")
@@ -79,7 +79,7 @@ def dashboard_tab():
         ("Headlines scored", f"{len(news) if not news.empty else 0}"),
         ("SEC filings", f"{len(files) if not files.empty else 0}"),
         ("Tickers with scores", f"{tickers_scored}"),
-        ("Avg Attention (0–100)", f"{avg_attn}"),
+        ("Avg Attention (0-100)", f"{avg_attn}"),
     ])
 
     st.subheader("Top 10 Setups (Attention Score)")
@@ -93,6 +93,13 @@ def dashboard_tab():
             "score": "Attention Score",
         })
         st.dataframe(top, hide_index=True)
+        st.caption(
+            "**Legend**\n"
+            "- **Ticker**: stock symbol\n"
+            "- **News Buzz**: unusual news activity vs baseline\n"
+            "- **Social Buzz**: unusual online/social activity\n"
+            "- **Attention Score**: combined News Buzz + Social Buzz"
+        )
     else:
         st.info("No composite scores yet. Run `python run_once.py`.")
 
@@ -113,13 +120,15 @@ def discovery_tab():
         "**news_sentiment** - average headline sentiment",
         "**score** - discovery score",
         "**last_close** - last close price",
+        "**prev_close** - prior close",
+        "**open** - today open",
     ])
 
     path = "data/universe_today.csv"
     if os.path.exists(path):
         df = pd.read_csv(path)
 
-                # Beginner-friendly headers
+        # Beginner-friendly headers
         rename_map = {
             "ticker": "Ticker",
             "vol_spike": "Volume Spike (x)",
@@ -169,48 +178,144 @@ def discovery_tab():
                [c for c in df_display.columns if c not in ordered]
         df_display = df_display[cols]
 
+        # Sort by Discovery Score (highest first)
+        if "Discovery Score" in df_display.columns:
+            df_display = df_display.sort_values("Discovery Score", ascending=False)
+
         st.dataframe(df_display, hide_index=True)
     else:
         st.error("Universe file not found. Run `python prep_discovery.py` to build it.")
 
     st.caption(f"Last refresh: {now_text()}")
 
-# ================== News ==================
+# ================== News Sentiment ==================
 def news_tab():
     st.header("News Sentiment")
     legend("News Sentiment",
-    ["Ticker – symbol","Title – headline text","Sentiment – −1 bearish to +1 bullish"])
+    [
+        "**ticker** - symbol",
+        "**title** - headline text",
+        "**sentiment** - -1 bearish to +1 bullish",
+    ])
     path = "data/news_scored.csv"
     if os.path.exists(path):
         df = pd.read_csv(path)
+        if "link" in df.columns:
+            df["link"] = df["link"].astype(str).str.slice(0, 80)
         st.dataframe(df, hide_index=True)
     else:
-        st.info("No news sentiment yet. Run `python run_once.py`.")
+        st.info("No news sentiment data yet. Run `python run_once.py`.")
     st.caption(f"Last refresh: {now_text()}")
 
 # ================== Chatter ==================
 def chatter_tab():
     st.header("Chatter")
-    st.caption("Aggregates attention from multiple sources.")
-    path = "data/chatter_summary.csv"
-    df = load_csv(path)
-    if not df.empty:
-        st.dataframe(df.head(50), hide_index=True)
+    st.caption("Aggregates attention from multiple sources. Scores are normalized to 0-100.")
+
+    legend("Chatter",
+    [
+        "**ticker** - symbol",
+        "**Overall_Attention** - avg (0-100) across sources",
+        "May include: **trends**, **reddit**, **stocktwits**, **wiki**, etc.",
+    ])
+
+    summary_path = "data/chatter_summary.csv"
+    long_path = "data/chatter.csv"
+
+    summ = load_csv(summary_path)
+    long = load_csv(long_path)
+
+    if not summ.empty:
+        show = summ.sort_values("Overall_Attention", ascending=False) if "Overall_Attention" in summ.columns else summ
+        st.subheader("Summary (0-100)")
+        st.dataframe(show.head(50), hide_index=True)
     else:
-        st.info("No chatter yet. Run `python run_once.py`.")
+        st.info("No chatter summary yet. Run `python run_once.py`.")
+
+    if not long.empty:
+        with st.expander("Per-source leaders", expanded=False):
+            for src in ["trends", "reddit_rss", "reddit_api", "stocktwits", "gdelt", "wiki"]:
+                sub = long[long["source"] == src].copy()
+                if sub.empty:
+                    continue
+                if "score_100" in sub.columns:
+                    sub = sub.sort_values("score_100", ascending=False)
+                st.markdown(f"**{src}**")
+                cols = [c for c in ["ticker","score_100","value","change_pct"] if c in sub.columns]
+                st.dataframe(sub[cols].head(20), hide_index=True)
+
     st.caption(f"Last refresh: {now_text()}")
 
 # ================== SEC Filings ==================
 FORM_IN_TITLE = re.compile(r"\b(8\-K|10\-Q|10\-K|S\-1|S\-3|424B[0-9A-Z]*|SC\s*13D|SC\s*13G)\b", re.IGNORECASE)
+TAG_CLEAN = re.compile(r"<[^>]*>")
+
+def clean_company(val: str) -> str:
+    if not isinstance(val, str):
+        return ""
+    return TAG_CLEAN.sub("", val).strip()
+
+def backfill_form_from_title(df: pd.DataFrame) -> pd.DataFrame:
+    if "title" not in df.columns:
+        return df
+    if "form" not in df.columns:
+        df["form"] = None
+    mask = df["form"].isna() | (df["form"].astype(str).str.strip() == "")
+    if mask.any():
+        found = df.loc[mask, "title"].astype(str).str.extract(FORM_IN_TITLE)[0]
+        df.loc[mask, "form"] = found.fillna(df.loc[mask, "form"])
+    df["form"] = df["form"].astype(str).str.upper().str.replace(r"\s+", "", regex=True)
+    df["form"] = df["form"].str.replace("SC13D", "SC 13D").str.replace("SC13G", "SC 13G")
+    return df
+
+def sec_flag(form: str) -> str:
+    if not isinstance(form, str):
+        return "📝"
+    f = form.upper().strip()
+    if f.startswith("8-K") or f.startswith("S-1") or f.startswith("424B") or f in {"SC 13D","SC 13G"}:
+        return "🔥"
+    if f in {"10-Q","10-K"}:
+        return "📘"
+    return "📝"
 
 def sec_tab():
     st.header("SEC Filings")
+
     fpath = "data/sec_filings.csv"
     if not os.path.exists(fpath):
         st.warning("No SEC filings saved yet.")
         return
+
     df = pd.read_csv(fpath)
-    st.dataframe(df.head(20), hide_index=True)
+    if df.empty:
+        st.info("SEC filings file is empty.")
+        return
+
+    if "filed" in df.columns:
+        df["filed"] = pd.to_datetime(df["filed"], errors="coerce", utc=True)
+    if "company" in df.columns:
+        df["company"] = df["company"].apply(clean_company)
+
+    df = backfill_form_from_title(df)
+    if "filed" in df.columns:
+        df["filed_et"] = df["filed"].dt.tz_convert("America/New_York").dt.strftime("%Y-%m-%d %H:%M")
+
+    last_time = df["filed"].max() if "filed" in df.columns else pd.NaT
+    last_time_txt = "—" if pd.isna(last_time) else last_time.tz_convert("America/New_York").strftime("%Y-%m-%d %H:%M ET")
+    total_rows = len(df)
+
+    st.info(f"Latest filing time: **{last_time_txt}** • Total rows: **{total_rows}**")
+
+    df["signal"] = df.get("form", "").apply(sec_flag)
+    latest = df.sort_values("filed", ascending=False) if "filed" in df.columns else df.copy()
+
+    prefer = ["signal","ticker","form","filed_et","company","title","link"]
+    show_cols = [c for c in prefer if c in latest.columns]
+
+    st.subheader("Latest 20 Filings")
+    st.caption("Legend: 🔥 hot (8-K/S-1/424B/SC 13D/G), 📘 financials (10-Q/10-K), 📝 other")
+    st.dataframe(latest[show_cols].head(20), hide_index=True)
+
     st.caption(f"Last refresh: {now_text()}")
 
 # ================== Layout ==================
