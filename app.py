@@ -119,7 +119,7 @@ def discovery_tab():
     if os.path.exists(path):
         df = pd.read_csv(path)
 
-        # Beginner-friendly headers
+                # Beginner-friendly headers
         rename_map = {
             "ticker": "Ticker",
             "vol_spike": "Volume Spike (x)",
@@ -130,13 +130,28 @@ def discovery_tab():
             "news_sentiment": "News Sentiment (-1..+1)",
             "score": "Discovery Score",
             "last_close": "Last Close",
+            "prev_close": "Prev Close",
+            "open": "Open",
         }
-        df_display = df.rename(columns=rename_map)
+        df_display = df.rename(columns=rename_map).copy()
+
+        # Numeric formatting
+        def _num(df_in, cols, ndigits):
+            for c in cols:
+                if c in df_in.columns:
+                    df_in[c] = pd.to_numeric(df_in[c], errors="coerce").round(ndigits)
+            return df_in
+
+        df_display = _num(
+            df_display,
+            ["Volume Spike (x)", "Daily Change %", "Last Close", "Prev Close", "Open", "Discovery Score"],
+            2
+        )
 
         # Optional cosmetic - replace NaN with "-"
         df_display = df_display.fillna("-")
 
-        # Keep a sensible column order if present
+        # Column order
         ordered = [
             "Ticker",
             "Volume Spike (x)",
@@ -147,6 +162,8 @@ def discovery_tab():
             "News Sentiment (-1..+1)",
             "Discovery Score",
             "Last Close",
+            "Prev Close",
+            "Open",
         ]
         cols = [c for c in ordered if c in df_display.columns] + \
                [c for c in df_display.columns if c not in ordered]
